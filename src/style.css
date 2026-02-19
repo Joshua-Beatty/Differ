@@ -1,13 +1,5 @@
 :root {
-  --bg-0: #07131d;
-  --bg-1: #0e1f2d;
-  --panel: #112737;
   --text: #d6e6f4;
-  --text-dim: #96afc2;
-  --accent: #4bc8a8;
-  --accent-strong: #2fc297;
-  --badge-bg: #18344c;
-  --badge-border: #2d5d7f;
 
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   font-synthesis: none;
@@ -25,15 +17,13 @@ body {
   min-width: 320px;
   min-height: 100vh;
   color: var(--text);
-  background:
-    radial-gradient(1200px 520px at 8% -20%, #1f4d75 0%, transparent 65%),
-    radial-gradient(900px 500px at 92% 118%, #3a6f4f 0%, transparent 58%),
-    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+  background: #1e1e1e;
 }
 
 #app {
   width: 100%;
   min-height: 100vh;
+  background: #1e1e1e;
 }
 
 .page {
@@ -44,6 +34,7 @@ body {
 
 .editor-shell {
   overflow: hidden;
+  background: #1e1e1e;
 }
 
 .editor {
