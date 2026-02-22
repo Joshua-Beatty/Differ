@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "bench:language": "node benchmarks/run-language-detection-bench.mjs"
   },
   "devDependencies": {
+    "@speed-highlight/core": "^1.2.14",
+    "@vscode/vscode-languagedetection": "^1.0.23",
     "typescript": "~5.9.3",
     "vite": "^7.3.1"
   },
   "dependencies": {
-    "magika": "^1.0.0",
+    "highlight.js": "^11.11.1",
     "monaco-editor": "^0.55.1"
   }
 }

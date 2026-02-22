@@ -1,13 +1,12 @@
 import './style.css';
-import { Magika } from 'magika';
 import * as monaco from 'monaco-editor';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import { detectMonacoLanguage, disposeLanguageDetection } from './languageDetection';
 
-const HIGH_CONFIDENCE_THRESHOLD = 0.84;
 const DETECTION_DEBOUNCE_MS = 500;
 
 type MonacoWorkerFactory = new () => Worker;
@@ -68,6 +67,7 @@ const allLanguageIds = monaco.languages
   .map((language) => language.id)
   .filter((languageId, index, all) => all.indexOf(languageId) === index)
   .sort((a, b) => a.localeCompare(b));
+const availableLanguageSet = new Set(allLanguageIds);
 
 const selectableLanguageIds = [
   'plaintext',
@@ -164,77 +164,13 @@ diffEditor.setModel({
   modified: modifiedModel,
 });
 
-const magikaToMonacoLanguage: Record<string, string> = {
-  c: 'c',
-  clojure: 'clojure',
-  coffeescript: 'coffeescript',
-  cpp: 'cpp',
-  csharp: 'csharp',
-  css: 'css',
-  dart: 'dart',
-  diff: 'diff',
-  dockerfile: 'dockerfile',
-  go: 'go',
-  handlebars: 'handlebars',
-  hcl: 'hcl',
-  html: 'html',
-  ini: 'ini',
-  java: 'java',
-  javascript: 'javascript',
-  json: 'json',
-  jsonc: 'json',
-  jsx: 'javascript',
-  kotlin: 'kotlin',
-  less: 'less',
-  lua: 'lua',
-  makefile: 'makefile',
-  markdown: 'markdown',
-  objectivec: 'objective-c',
-  perl: 'perl',
-  php: 'php',
-  powershell: 'powershell',
-  protobuf: 'protobuf',
-  python: 'python',
-  r: 'r',
-  ruby: 'ruby',
-  rust: 'rust',
-  scala: 'scala',
-  shell: 'shell',
-  solidity: 'sol',
-  sql: 'sql',
-  swift: 'swift',
-  toml: 'ini',
-  tsx: 'typescript',
-  typescript: 'typescript',
-  vue: 'vue',
-  xml: 'xml',
-  yaml: 'yaml',
-};
+const originalCodeEditor = diffEditor.getOriginalEditor();
+const modifiedCodeEditor = diffEditor.getModifiedEditor();
 
-const encoder = new TextEncoder();
-let magikaPromise: Promise<Magika> | null = null;
 let currentLanguage = 'plaintext';
 let detectionTimer: number | null = null;
 let latestDetectionRequestId = 0;
 let isManualMode = false;
-
-const getMagika = () => {
-  if (!magikaPromise) {
-    magikaPromise = Magika.create();
-  }
-  return magikaPromise;
-};
-
-const resolveMonacoLanguage = (label: string) => {
-  if (allLanguageIds.includes(label)) {
-    return label;
-  }
-  const mapped = magikaToMonacoLanguage[label];
-  if (mapped && allLanguageIds.includes(mapped)) {
-    return mapped;
-  }
-  return null;
-};
 
 const setStatusText = (text: string) => {
   detectStatus.textContent = text;
@@ -270,56 +206,67 @@ const runDetection = async () => {
     return;
   }
 
-  setStatusText('Detecting syntax with Magika...');
+  setStatusText('Detecting syntax...');
 
   try {
-    const magika = await getMagika();
-    const result = await magika.identifyBytes(encoder.encode(text));
+    const { detectedLabel, languageId } = await detectMonacoLanguage(text, availableLanguageSet);
 
     if (isManualMode || requestId !== latestDetectionRequestId) {
       return;
     }
 
-    const confidence = result.prediction.score;
-    const magikaLabel = result.prediction.output.label;
-    const languageId = resolveMonacoLanguage(magikaLabel);
-
-    if (confidence >= HIGH_CONFIDENCE_THRESHOLD && languageId) {
+    if (languageId && languageId !== 'plaintext') {
       applyLanguage(languageId);
-      setStatusText(`Auto detected ${magikaLabel} (${Math.round(confidence * 100)}%).`);
+      const statusLabel = languageId === detectedLabel ? detectedLabel : `${languageId} (from ${detectedLabel})`;
+      setStatusText(`Auto detected ${statusLabel}.`);
       return;
     }
 
     applyLanguage('plaintext');
-    setStatusText(`Low confidence (${Math.round(confidence * 100)}%). Fallback to plaintext.`);
+    setStatusText('Ambiguous detection. Fallback to plaintext.');
   } catch {
     if (!isManualMode && requestId === latestDetectionRequestId) {
       applyLanguage('plaintext');
-      setStatusText('Magika failed to detect syntax. Fallback to plaintext.');
+      setStatusText('Detection failed. Fallback to plaintext.');
     }
   }
 };
 
-const scheduleDetection = () => {
+const triggerDetection = (options: { immediate: boolean }) => {
   if (isManualMode) {
     return;
   }
 
   if (detectionTimer) {
     window.clearTimeout(detectionTimer);
+    detectionTimer = null;
+  }
+
+  if (options.immediate) {
+    void runDetection();
+    return;
   }
 
   detectionTimer = window.setTimeout(() => {
+    detectionTimer = null;
     void runDetection();
   }, DETECTION_DEBOUNCE_MS);
 };
 
+originalCodeEditor.onDidPaste(() => {
+  triggerDetection({ immediate: true });
+});
+
+modifiedCodeEditor.onDidPaste(() => {
+  triggerDetection({ immediate: true });
+});
+
 originalModel.onDidChangeContent(() => {
-  scheduleDetection();
+  triggerDetection({ immediate: false });
 });
 
 modifiedModel.onDidChangeContent(() => {
-  scheduleDetection();
+  triggerDetection({ immediate: false });
 });
 
 languageSelect.addEventListener('change', () => {
@@ -329,17 +276,17 @@ languageSelect.addEventListener('change', () => {
     isManualMode = false;
     modeStatus.textContent = 'Auto';
     setStatusText('Auto detection enabled.');
-    scheduleDetection();
+    triggerDetection({ immediate: true });
     return;
   }
 
   isManualMode = true;
   modeStatus.textContent = 'Manual';
   applyLanguage(selected);
-  setStatusText(`Manual override: ${selected}. Magika paused.`);
+  setStatusText(`Manual override: ${selected}. Auto detection paused.`);
 });
 
-scheduleDetection();
+triggerDetection({ immediate: true });
 
 window.addEventListener('beforeunload', () => {
   if (detectionTimer) {
@@ -348,4 +295,5 @@ window.addEventListener('beforeunload', () => {
   originalModel.dispose();
   modifiedModel.dispose();
   diffEditor.dispose();
+  void disposeLanguageDetection();
 });
